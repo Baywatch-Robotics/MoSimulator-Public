@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using MoSimLib;
 using RobotFramework.Interfaces;
 using UnityEngine;
@@ -7,7 +8,29 @@ namespace RobotFramework.Components
 {
     public class RollerGroup: MonoBehaviour, IRoller
     {
-        [SerializeField] private RollerInstance[] rollers;
+        [SerializeField] private RollerInstance[] rollers = Array.Empty<RollerInstance>();
+        private bool reportedMissingMember;
+
+        private static bool HasRoller(RollerInstance member)
+        {
+            IRoller roller = member?.Roller;
+            return roller != null && (!(roller is UnityEngine.Object component) || component != null);
+        }
+
+        private bool HasMissingMembers => rollers == null || Array.Exists(rollers, member => !HasRoller(member));
+
+        private IEnumerable<RollerInstance> ValidMembers()
+        {
+            if (rollers == null) yield break;
+            for (int i = 0; i < rollers.Length; i++)
+            {
+                if (HasRoller(rollers[i])) { yield return rollers[i]; continue; }
+                if (reportedMissingMember) continue;
+                reportedMissingMember = true;
+                Debug.LogWarning($"RollerGroup '{name}' has a missing roller reference at member {i}. " +
+                    "Skipping missing members; repair the group's references. Readiness remains false.", this);
+            }
+        }
         
         public MoSimResult<MoSimLib.Void> SetRpm(float rpm)
         {
@@ -18,7 +41,7 @@ namespace RobotFramework.Components
 
         private void SetRpmV1(float rpm)
         {
-            foreach (RollerInstance r in rollers)
+            foreach (RollerInstance r in ValidMembers())
             {
                 var setRpm = r.flipped ? -rpm : rpm;
                 r.Roller.SetRpm(setRpm * r.Multiplier);
@@ -33,8 +56,8 @@ namespace RobotFramework.Components
 
         private bool OverrideRpmV1(float rpm)
         {
-            bool output = true;
-            foreach (RollerInstance r in rollers)
+            bool output = !HasMissingMembers;
+            foreach (RollerInstance r in ValidMembers())
             {
                 var setRpm = r.flipped ? -rpm : rpm;
                 var o = r.Roller.OverrideRpm(setRpm * r.Multiplier);
@@ -51,8 +74,8 @@ namespace RobotFramework.Components
 
         private bool FlipRpmV1()
         {
-            bool output = true;
-            foreach (RollerInstance r in rollers)
+            bool output = !HasMissingMembers;
+            foreach (RollerInstance r in ValidMembers())
             {
                 var o = r.Roller.FlipRpm();
                 if (!o) output = false;
@@ -69,7 +92,7 @@ namespace RobotFramework.Components
 
         private void StopV1()
         {
-            foreach (RollerInstance r in rollers)
+            foreach (RollerInstance r in ValidMembers())
             {
                 r.Roller.Stop();
             }
@@ -87,8 +110,8 @@ namespace RobotFramework.Components
 
         private bool DivideSpeedV1(float divider)
         {
-            bool output = true;
-            foreach (RollerInstance r in rollers)
+            bool output = !HasMissingMembers;
+            foreach (RollerInstance r in ValidMembers())
             {
                 var o = r.Roller.DivideSpeed(divider);
                 if (!o) output = false;
@@ -105,7 +128,7 @@ namespace RobotFramework.Components
 
         private void SetAllMpV1(float mp)
         {
-            foreach (RollerInstance r in rollers)
+            foreach (RollerInstance r in ValidMembers())
             {
                 r.SetMp(mp);
             }
@@ -120,7 +143,7 @@ namespace RobotFramework.Components
 
         private void ChangeMotorV1(InteractionRoller.RollerMotor selectedMotor)
         {
-            foreach (RollerInstance r in rollers)
+            foreach (RollerInstance r in ValidMembers())
             {
                 r.Roller.ChangeMotor(selectedMotor);
             }
@@ -149,8 +172,9 @@ namespace RobotFramework.Components
 
         private bool AtSpeedV1()
         {
+            if (HasMissingMembers) return false;
             bool hasSpeedControlledRoller = false;
-            foreach (RollerInstance r in rollers)
+            foreach (RollerInstance r in ValidMembers())
             {
                 PvffController pvffController = r.GetPvffController();
                 if (pvffController != null)
@@ -228,7 +252,7 @@ namespace RobotFramework.Components
         {
             float total = 0f;
             int count = 0;
-            foreach (RollerInstance roller in rollers)
+            foreach (RollerInstance roller in ValidMembers())
             {
                 float? rpm = _getRpm(roller);
                 if (!rpm.HasValue)
